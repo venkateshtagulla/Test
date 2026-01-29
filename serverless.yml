@@ -1,0 +1,780 @@
+service: arka-inspector-auth
+
+provider:
+  name: aws
+  runtime: python3.12
+  region: ${env:AWS_REGION}
+  timeout: 28 # 28 seconds (API Gateway REST API limit is 29s, leaving 1s buffer)
+  memorySize: 512 # 512MB memory for better performance with file uploads
+  apiGateway:
+    binaryMediaTypes:
+      - "*/*"
+  environment:
+    DYNAMODB_TABLE_INSPECTORS: ${env:DYNAMODB_TABLE_INSPECTORS}
+    DYNAMODB_TABLE_ADMINS: ${env:DYNAMODB_TABLE_ADMINS}
+    DYNAMODB_TABLE_VESSELS: ${env:DYNAMODB_TABLE_VESSELS}
+    DYNAMODB_TABLE_INSPECTION_FORMS: ${env:DYNAMODB_TABLE_INSPECTION_FORMS}
+    DYNAMODB_TABLE_INSPECTION_ASSIGNMENTS: ${env:DYNAMODB_TABLE_INSPECTION_ASSIGNMENTS}
+    DYNAMODB_TABLE_CREW: ${env:DYNAMODB_TABLE_CREW}
+    DYNAMODB_TABLE_DEFECTS: ${env:DYNAMODB_TABLE_DEFECTS}
+    DYNAMODB_TABLE_VESSEL_ASSIGNMENTS: ${env:DYNAMODB_TABLE_VESSEL_ASSIGNMENTS}
+    S3_MEDIA_BUCKET: ${env:S3_MEDIA_BUCKET}
+    JWT_SECRET_KEY: ${env:JWT_SECRET_KEY}
+    JWT_ALGORITHM: ${env:JWT_ALGORITHM, "HS256"}
+    ACCESS_TOKEN_EXPIRE_MINUTES: ${env:ACCESS_TOKEN_EXPIRE_MINUTES, 1440}
+    REFRESH_TOKEN_EXPIRE_MINUTES: ${env:REFRESH_TOKEN_EXPIRE_MINUTES, 43200}
+    DYNAMODB_TABLE_INSPECTION_RESPONSES: ${env:DYNAMODB_TABLE_INSPECTION_RESPONSES}
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:Scan
+        - dynamodb:Query
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+        - dynamodb:BatchWriteItem
+        - s3:PutObject
+        - s3:GetObject
+        - s3:DeleteObject
+      Resource:
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_INSPECTORS}
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_INSPECTORS}/index/email_index
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_ADMINS}
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_ADMINS}/index/email_index
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_VESSELS}
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_VESSELS}/index/admin_id_index
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_INSPECTION_FORMS}
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_INSPECTION_FORMS}/index/vessel_id_index
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_INSPECTION_FORMS}/index/inspector_id_index
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_INSPECTION_FORMS}/index/admin_id_index
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_INSPECTION_ASSIGNMENTS}
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_INSPECTION_ASSIGNMENTS}/index/admin_id_index
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_INSPECTION_ASSIGNMENTS}/index/form_id_index
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_INSPECTION_ASSIGNMENTS}/index/assignee_id_index
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_CREW}
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_CREW}/index/email_index
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_DEFECTS}
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_VESSEL_ASSIGNMENTS}
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_VESSEL_ASSIGNMENTS}/index/assignment_id_index
+        - arn:aws:dynamodb:${env:AWS_REGION}:*:table/${env:DYNAMODB_TABLE_INSPECTION_RESPONSES}
+        - arn:aws:s3:::${env:S3_MEDIA_BUCKET}
+        - arn:aws:s3:::${env:S3_MEDIA_BUCKET}/*
+
+functions:
+  registerInspector:
+    handler: routers/lambda/auth.register_handler
+    events:
+      - http:
+          path: inspectors/register
+          method: post
+          cors: true
+  loginInspector:
+    handler: routers/lambda/auth.login_handler
+    events:
+      - http:
+          path: inspectors/login
+          method: post
+          cors: true
+  inspectorProfile:
+    handler: routers/lambda/auth.profile_handler
+    events:
+      - http:
+          path: inspectors/{inspector_id}
+          method: get
+          cors: true
+  inspectorMe:
+    handler: routers/lambda/auth.inspector_me_handler
+    events:
+      - http:
+          path: inspector/me
+          method: get
+          cors: true
+  inspectorDashboard:
+    handler: routers/lambda/auth.inspector_dashboard_handler
+    events:
+      - http:
+          path: inspectors/dashboard
+          method: get
+          cors: true
+  inspectorSync:
+    handler: routers/lambda/auth.inspector_sync_handler
+    events:
+      - http:
+          path: inspectors/sync
+          method: post
+          cors: true
+
+  registerAdmin:
+    handler: routers/lambda/admin_auth.admin_register_handler
+    events:
+      - http:
+          path: admins/register
+          method: post
+          cors: true
+
+  loginAdmin:
+    handler: routers/lambda/admin_auth.admin_login_handler
+    events:
+      - http:
+          path: admins/login
+          method: post
+          cors: true
+
+  adminProfile:
+    handler: routers/lambda/admin_auth.admin_profile_handler
+    events:
+      - http:
+          path: admins/{admin_id}
+          method: get
+          cors: true
+
+  adminMe:
+    handler: routers/lambda/admin_auth.admin_me_handler
+    events:
+      - http:
+          path: admin/profile
+          method: get
+          cors: true
+
+  createVessel:
+    handler: routers/lambda/vessel.create_vessel_handler
+    events:
+      - http:
+          path: vessels
+          method: post
+          cors: true
+
+  listVessels:
+    handler: routers/lambda/vessel.list_vessels_handler
+    events:
+      - http:
+          path: vessels
+          method: get
+          cors: true
+
+  getVessel:
+    handler: routers/lambda/vessel.get_vessel_handler
+    events:
+      - http:
+          path: vessels/{vessel_id}
+          method: get
+          cors: true
+
+  createVesselAssignment:
+    handler: routers/lambda/vessel.create_vessel_assignment_handler
+    events:
+      - http:
+          path: vessels/assignments
+          method: post
+          cors: true
+
+  getVesselAssignments:
+    handler: routers/lambda/vessel.get_vessel_assignments_handler
+    events:
+      - http:
+          path: vessels/assignments
+          method: get
+          cors: true
+
+  createInspectionForm:
+    handler: routers/lambda/inspection_form.create_inspection_form_handler
+    events:
+      - http:
+          path: forms
+          method: post
+          cors: true
+
+  getInspectionForm:
+    handler: routers/lambda/inspection_form.get_inspection_form_handler
+    events:
+      - http:
+          path: forms/{form_id}
+          method: get
+          cors: true
+
+  updateInspectionForm:
+    handler: routers/lambda/inspection_form.update_inspection_form_handler
+    events:
+      - http:
+          path: forms/{form_id}
+          method: put
+          cors: true
+
+  deleteInspectionForm:
+    handler: routers/lambda/inspection_form.delete_inspection_form_handler
+    events:
+      - http:
+          path: forms/{form_id}
+          method: delete
+          cors: true
+
+  listInspectionForms:
+    handler: routers/lambda/inspection_form.list_inspection_forms_handler
+    events:
+      - http:
+          path: forms
+          method: get
+          cors: true
+
+  listSubmittedForms:
+    handler: routers/lambda/inspection_form.list_submitted_forms_handler
+    events:
+      - http:
+          path: admin/forms/submitted
+          method: get
+          cors: true
+
+  listInspectorForms:
+    handler: routers/lambda/inspection_form.list_inspector_forms_handler
+    events:
+      - http:
+          path: inspectors/forms
+          method: get
+          cors: true
+
+  submitInspectorForm:
+    handler: routers/lambda/inspection_form.submit_inspection_form_handler
+    events:
+      - http:
+          path: inspectors/forms/{form_id}/submit
+          method: post
+          cors: true
+
+  presignUpload:
+    handler: routers/lambda/upload.presign_upload_handler
+    events:
+      - http:
+          path: uploads/presign
+          method: post
+          cors: true
+
+  createInspectionAssignment:
+    handler: routers/lambda/inspection_assignment.create_inspection_assignment_handler
+    events:
+      - http:
+          path: inspection-assignments
+          method: post
+          cors: true
+
+  bulkCreateInspectionAssignment:
+    handler: routers/lambda/inspection_assignment.bulk_create_inspection_assignment_handler
+    events:
+      - http:
+          path: inspection-assignments/bulk
+          method: post
+          cors: true
+
+  getInspectionAssignment:
+    handler: routers/lambda/inspection_assignment.get_inspection_assignment_handler
+    events:
+      - http:
+          path: inspection-assignments/{assignment_id}
+          method: get
+          cors: true
+
+  listInspectionAssignments:
+    handler: routers/lambda/inspection_assignment.list_inspection_assignments_handler
+    events:
+      - http:
+          path: inspection-assignments
+          method: get
+          cors: true
+
+  listInspectorAssignments:
+    handler: routers/lambda/inspection_assignment.list_inspector_assignments_handler
+    events:
+      - http:
+          path: inspectors/assignments
+          method: get
+          cors: true
+
+  createCrewInspectionAssignment:
+    handler: routers/lambda/inspection_assignment.create_crew_inspection_assignment_handler
+    events:
+      - http:
+          path: crew/{crew_id}/inspection-assignments
+          method: post
+          cors: true
+
+  listCrewAssignments:
+    handler: routers/lambda/inspection_assignment.list_crew_assignments_handler
+    events:
+      - http:
+          path: crew/assignments
+          method: get
+          cors: true
+
+  deleteInspectionAssignment:
+    handler: routers/lambda/inspection_assignment.delete_inspection_assignment_handler
+    events:
+      - http:
+          path: inspection-assignments/form/{form_id}
+          method: delete
+          cors: true
+
+  createCrew:
+    handler: routers/lambda/crew.create_crew_handler
+    events:
+      - http:
+          path: crew
+          method: post
+          cors: true
+
+  getCrew:
+    handler: routers/lambda/crew.get_crew_handler
+    events:
+      - http:
+          path: crew/{crew_id}
+          method: get
+          cors: true
+
+  listCrew:
+    handler: routers/lambda/crew.list_crew_handler
+    events:
+      - http:
+          path: crew
+          method: get
+          cors: true
+
+  adminResetCrewPassword:
+    handler: routers/lambda/crew.admin_reset_crew_password_handler
+    events:
+      - http:
+          path: admin/crew/{crew_id}/reset-password
+          method: post
+          cors: true
+
+  adminDeleteCrew:
+    handler: routers/lambda/crew.admin_delete_crew_handler
+    events:
+      - http:
+          path: admin/crew/{crew_id}
+          method: delete
+          cors: true
+
+  registerCrew:
+    handler: routers/lambda/crew.register_crew_handler
+    events:
+      - http:
+          path: crew/register
+          method: post
+          cors: true
+
+  loginCrew:
+    handler: routers/lambda/crew.login_crew_handler
+    events:
+      - http:
+          path: crew/login
+          method: post
+          cors: true
+  crewMe:
+    handler: routers/lambda/crew.crew_me_handler
+    events:
+      - http:
+          path: crew/me
+          method: get
+          cors: true
+  crewDashboard:
+    handler: routers/lambda/crew.crew_dashboard_handler
+    events:
+      - http:
+          path: crew/dashboard
+          method: get
+          cors: true
+  crewSync:
+    handler: routers/lambda/crew.crew_sync_handler
+    events:
+      - http:
+          path: crew/sync
+          method: post
+          cors: true
+
+  adminCreateInspector:
+    handler: routers/lambda/admin_inspector.admin_create_inspector_handler
+    events:
+      - http:
+          path: admin/inspectors
+          method: post
+          cors: true
+
+  adminGetInspector:
+    handler: routers/lambda/admin_inspector.admin_get_inspector_handler
+    events:
+      - http:
+          path: admin/inspectors/{inspector_id}
+          method: get
+          cors: true
+
+  adminListInspectors:
+    handler: routers/lambda/admin_inspector.admin_list_inspectors_handler
+    events:
+      - http:
+          path: admin/inspectors
+          method: get
+          cors: true
+
+  adminResetInspectorPassword:
+    handler: routers/lambda/admin_inspector.admin_reset_inspector_password_handler
+    events:
+      - http:
+          path: admin/inspectors/{inspector_id}/reset-password
+          method: post
+          cors: true
+
+  adminDeleteInspector:
+    handler: routers/lambda/admin_inspector.admin_delete_inspector_handler
+    events:
+      - http:
+          path: admin/inspectors/{inspector_id}
+          method: delete
+          cors: true
+
+  listDefects:
+    handler: routers/lambda/defect.list_defects_handler
+    events:
+      - http:
+          path: admin/defects
+          method: get
+          cors: true
+
+  getDefect:
+    handler: routers/lambda/defect.get_defect_handler
+    events:
+      - http:
+          path: admin/defects/{defect_id}
+          method: get
+          cors: true
+
+  approveDefect:
+    handler: routers/lambda/defect.approve_defect_handler
+    events:
+      - http:
+          path: admin/defects/{defect_id}/approve
+          method: post
+          cors: true
+
+  closeDefect:
+    handler: routers/lambda/defect.close_defect_handler
+    events:
+      - http:
+          path: admin/defects/{defect_id}/close
+          method: post
+          cors: true
+
+  addDefectComment:
+    handler: routers/lambda/defect.add_comment_handler
+    events:
+      - http:
+          path: admin/defects/{defect_id}/comments
+          method: post
+          cors: true
+
+  updateDefect:
+    handler: routers/lambda/defect.update_defect_handler
+    events:
+      - http:
+          path: admin/defects/{defect_id}
+          method: put
+          cors: true
+
+  createInspectorDefect:
+    handler: routers/lambda/defect.create_inspector_defect_handler
+    events:
+      - http:
+          path: inspectors/defects
+          method: post
+          cors: true
+
+  listInspectorDefects:
+    handler: routers/lambda/defect.list_inspector_defects_handler
+    events:
+      - http:
+          path: inspectors/defects
+          method: get
+          cors: true
+
+  createCrewDefect:
+    handler: routers/lambda/defect.create_crew_defect_handler
+    events:
+      - http:
+          path: crew/defects
+          method: post
+          cors: true
+
+  listCrewDefects:
+    handler: routers/lambda/defect.list_crew_defects_handler
+    events:
+      - http:
+          path: crew/defects
+          method: get
+          cors: true
+
+  addInspectorDefectAnalysis:
+    handler: routers/lambda/defect.add_inspector_defect_analysis_handler
+    events:
+      - http:
+          path: inspectors/defects/{defect_id}/analysis
+          method: post
+          cors: true
+
+  addCrewDefectAnalysis:
+    handler: routers/lambda/defect.add_crew_defect_analysis_handler
+    events:
+      - http:
+          path: crew/defects/{defect_id}/analysis
+          method: post
+          cors: true
+
+  getDashboard:
+    handler: routers/lambda/dashboard.get_dashboard_handler
+    events:
+      - http:
+          path: admin/dashboard
+          method: get
+          cors: true
+
+plugins:
+  - serverless-python-requirements
+  - serverless-prune-plugin
+  # - serverless-dotenv-plugin
+
+custom:
+  pythonRequirements:
+    dockerizePip: true
+    pythonBin: python3.12
+    dockerImage: public.ecr.aws/sam/build-python3.12:latest-x86_64
+    slim: false
+    strip: false
+    invalidateCaches: true
+  prune:
+    automatic: true
+    number: 3
+  dotenv:
+    include:
+      - DYNAMODB_TABLE_INSPECTORS
+      - DYNAMODB_TABLE_VESSELS
+      - DYNAMODB_TABLE_INSPECTION_FORMS
+      - DYNAMODB_TABLE_INSPECTION_ASSIGNMENTS
+      - DYNAMODB_TABLE_ADMINS
+      - DYNAMODB_TABLE_CREW
+      - DYNAMODB_TABLE_DEFECTS
+      - DYNAMODB_TABLE_VESSEL_ASSIGNMENTS
+      - DYNAMODB_TABLE_INSPECTION_RESPONSES
+      - S3_MEDIA_BUCKET
+      - JWT_SECRET_KEY
+      - JWT_ALGORITHM
+      - ACCESS_TOKEN_EXPIRE_MINUTES
+      - REFRESH_TOKEN_EXPIRE_MINUTES
+      - S3_MEDIA_BUCKET
+
+resources:
+  Resources:
+    InspectionResponsesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:DYNAMODB_TABLE_INSPECTION_RESPONSES}
+        AttributeDefinitions:
+          - AttributeName: inspection_id
+            AttributeType: S
+          - AttributeName: question_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: inspection_id
+            KeyType: HASH
+          - AttributeName: question_id
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+
+    InspectorsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:DYNAMODB_TABLE_INSPECTORS}
+        AttributeDefinitions:
+          - AttributeName: inspector_id
+            AttributeType: S
+          - AttributeName: email
+            AttributeType: S
+        KeySchema:
+          - AttributeName: inspector_id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: email_index
+            KeySchema:
+              - AttributeName: email
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        BillingMode: PAY_PER_REQUEST
+
+    VesselsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:DYNAMODB_TABLE_VESSELS}
+        AttributeDefinitions:
+          - AttributeName: vessel_id
+            AttributeType: S
+          - AttributeName: admin_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: vessel_id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: admin_id_index
+            KeySchema:
+              - AttributeName: admin_id
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        BillingMode: PAY_PER_REQUEST
+
+    InspectionFormsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:DYNAMODB_TABLE_INSPECTION_FORMS}
+        AttributeDefinitions:
+          - AttributeName: form_id
+            AttributeType: S
+          - AttributeName: vessel_id
+            AttributeType: S
+          - AttributeName: assigned_inspector_id
+            AttributeType: S
+          - AttributeName: created_by_admin_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: form_id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: vessel_id_index
+            KeySchema:
+              - AttributeName: vessel_id
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: inspector_id_index
+            KeySchema:
+              - AttributeName: assigned_inspector_id
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: admin_id_index
+            KeySchema:
+              - AttributeName: created_by_admin_id
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        BillingMode: PAY_PER_REQUEST
+
+    InspectionAssignmentsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:DYNAMODB_TABLE_INSPECTION_ASSIGNMENTS}
+        AttributeDefinitions:
+          - AttributeName: assignment_id
+            AttributeType: S
+          - AttributeName: created_by_admin_id
+            AttributeType: S
+          - AttributeName: form_id
+            AttributeType: S
+          - AttributeName: assignee_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: assignment_id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: admin_id_index
+            KeySchema:
+              - AttributeName: created_by_admin_id
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: form_id_index
+            KeySchema:
+              - AttributeName: form_id
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: assignee_id_index
+            KeySchema:
+              - AttributeName: assignee_id
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        BillingMode: PAY_PER_REQUEST
+
+    AdminsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:DYNAMODB_TABLE_ADMINS}
+        AttributeDefinitions:
+          - AttributeName: admin_id
+            AttributeType: S
+          - AttributeName: email
+            AttributeType: S
+        KeySchema:
+          - AttributeName: admin_id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: email_index
+            KeySchema:
+              - AttributeName: email
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        BillingMode: PAY_PER_REQUEST
+
+    CrewTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:DYNAMODB_TABLE_CREW}
+        AttributeDefinitions:
+          - AttributeName: crew_id
+            AttributeType: S
+          - AttributeName: email
+            AttributeType: S
+        KeySchema:
+          - AttributeName: crew_id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: email_index
+            KeySchema:
+              - AttributeName: email
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        BillingMode: PAY_PER_REQUEST
+
+    DefectsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:DYNAMODB_TABLE_DEFECTS}
+        AttributeDefinitions:
+          - AttributeName: defect_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: defect_id
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
+
+    VesselAssignmentsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:DYNAMODB_TABLE_VESSEL_ASSIGNMENTS}
+        AttributeDefinitions:
+          - AttributeName: vessel_id
+            AttributeType: S
+          - AttributeName: assignment_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: vessel_id
+            KeyType: HASH
+          - AttributeName: assignment_id
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: assignment_id_index
+            KeySchema:
+              - AttributeName: assignment_id
+                KeyType: HASH
+            Projection:
+              ProjectionType: KEYS_ONLY
+        BillingMode: PAY_PER_REQUEST

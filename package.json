@@ -1,0 +1,13 @@
+{
+  "scripts": {
+    "dev": "serverless offline start --stage local"
+  },
+  "devDependencies": {
+    "serverless-offline": "^13.9.0",
+    "serverless-prune-plugin": "^2.1.0",
+    "serverless-python-requirements": "^6.1.2"
+  },
+  "dependencies": {
+    "serverless": "^4.29.4"
+  }
+}

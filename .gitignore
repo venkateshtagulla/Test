@@ -1,0 +1,15 @@
+# .env
+/tests
+.serverless
+/docs
+/.md
+.cursorrules
+# serverless.yml
+/node_modules
+/myenv
+.python-version
+/venv
+# .gitignore
+.env
+.env.local
+.env.global
